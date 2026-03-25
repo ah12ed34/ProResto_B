@@ -53,7 +53,7 @@ export class InvoicesService {
         }
 
         if (product.type === ItemType.MENU) {
-          throw new Error(`خطأ: لا يمكنك تخزين أصناف جاهزة (${product.name}) في المخزن! المشتريات للمواد الخام فقط.`);
+          throw new BadRequestException(`خطأ: لا يمكنك تخزين أصناف جاهزة (${product.name}) في المخزن! المشتريات للمواد الخام فقط.`);
         }
 
         // 🌟 التعديل السحري: إجبار السيرفر على قراءة القيم كأرقام صريحة
@@ -157,7 +157,7 @@ product.qty = currentQty + baseQty;
         // }
 
        if (product.type === 'raw') {
-          throw new Error(`خطأ أمني: الكاشير لا يمكنه بيع مواد خام (${product.name}) للزبون مباشرة!`);
+          throw new BadRequestException(`خطأ أمني: الكاشير لا يمكنه بيع مواد خام (${product.name}) للزبون مباشرة!`);
         }
 
         // بما أنه صنف MENU (يُصنع لحظياً)، لن نخصم من المخزون هنا
@@ -229,7 +229,7 @@ product.qty = currentQty + baseQty;
         });
 
         if (!product || product.type !== 'raw') {
-          throw new Error(`الصنف ${item.productId} إما غير موجود أو ليس مادة خاماً!`);
+          throw new BadRequestException(`الصنف ${item.productId} إما غير موجود أو ليس مادة خاماً!`);
         }
 
         const currentQty = Number(product.qty) || 0;
@@ -241,7 +241,7 @@ product.qty = currentQty + baseQty;
 );
 
 if (currentQty < issuedQty) {
-  throw new Error(`رصيد غير كافي`);
+  throw new BadRequestException('رصيد غير كافي');
 }
 
 product.qty = currentQty - issuedQty;
@@ -268,7 +268,7 @@ product.qty = currentQty - issuedQty;
       await queryRunner.release();
     }
   }
-  async getDailyReport() {
+  async getDailyReport(body: any) {
     // تحديد بداية ونهاية اليوم الحالي
     const today = new Date();
     const startOfDay = new Date(today.setHours(0, 0, 0, 0));
@@ -276,15 +276,25 @@ product.qty = currentQty - issuedQty;
 
     // جلب مبيعات اليوم
     const sales = await this.invoiceRepo.find({
-      where: { type: InvoiceType.SALE, createdAt: Between(startOfDay, endOfDay) },
+      where: { type: InvoiceType.SALE, createdAt: Between(startOfDay, endOfDay) , createdBy : { id : body?.userId } },
       relations: ['createdBy'],
     });
+    for (const sale of sales) {
+      if(sale.createdBy) {
+        delete (sale.createdBy as any).password; // 🌟 تنظيف كلمة المرور (: any )password ;
+      }
+    }
 
     // جلب مشتريات اليوم
     const purchases = await this.invoiceRepo.find({
-      where: { type: InvoiceType.PURCHASE, createdAt: Between(startOfDay, endOfDay) },
+      where: { type: InvoiceType.PURCHASE, createdAt: Between(startOfDay, endOfDay) , createdBy : { id : body?.userId } },
       relations: ['createdBy'],
     });
+    for (const purchase of purchases) {
+      if(purchase.createdBy) {
+        delete (purchase.createdBy as any).password; // 🌟 تنظيف كلمة المرور (: any )password ;
+      }
+    }
 
     // حساب المجاميع
     const totalSales = sales.reduce((sum, inv) => sum + Number(inv.totalAmount), 0);
@@ -301,19 +311,4 @@ product.qty = currentQty - issuedQty;
     };
   }
 
-  private async convertToBaseUnit(productId: number, unitId: number, quantity: number, manager: any): Promise<number> {
-  const productUnit = await manager.findOne(ProductUnit, {
-    where: {
-      product: { id: productId },
-      unit: { id: unitId },
-    },
-    relations: ['unit', 'product'],
-  });
-
-  if (!productUnit) {
-    throw new BadRequestException(`لا يوجد تحويل لهذه الوحدة لهذا المنتج`);
-  }
-
-  return Number(quantity) * Number(productUnit.conversionFactor);
-}
 }

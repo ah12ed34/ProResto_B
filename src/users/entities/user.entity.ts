@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
 import { Role } from './role.entity'; // استدعاء جدول الأدوار الجديد
+import { Exclude } from 'class-transformer';
 
 @Entity('users')
 export class User {
@@ -13,6 +14,7 @@ export class User {
   username: string; // اسم الدخول
 
   @Column()
+  @Exclude()
   password: string; // كلمة المرور
 
   // 🌟 التعديل السحري: ربط المستخدم بجدول الأدوار بدلاً من النص الثابت

@@ -29,7 +29,7 @@ export class InvoicesController {
 
   @Get('daily-report')
   @RequirePermissions('view_reports') // يمكنك تفعيلها لاحقاً للمدير فقط
-  getDailyReport() {
-    return this.invoicesService.getDailyReport();
+  getDailyReport(@Body() body: any) {
+    return this.invoicesService.getDailyReport(body);
   }
 }
