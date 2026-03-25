@@ -69,10 +69,19 @@ export class ProductsService {
 
   // دالة لجلب سجل حركات صنف معين مع تفاصيل الموظف
   async getProductMovements(productId: number) {
-    return this.dataSource.manager.find(StockMovement, {
+    const movements = await this.dataSource.manager.find(StockMovement, {
       where: { product: { id: productId } },
-      relations: ['user'], // لنجلب اسم الموظف الذي قام بالحركة
-      order:  { createdAt: 'DESC' }, // ترتيب من الأحدث للأقدم
+      relations: ['user'], 
+      order:  { createdAt: 'DESC' }, 
+    });
+
+    // 🌟 تنظيف أمني: مسح كلمة المرور من النتيجة قبل إرسالها
+   return movements.map(movement => {
+      if (movement.user) {
+        // 🌟 إخبار TypeScript بتجاهل القواعد في هذا السطر فقط
+        delete (movement.user as any).password; 
+      }
+      return movement;
     });
   }
 }
