@@ -1,33 +1,43 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { UsersModule } from '../users/users.module';
-
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { ConfigService } from '@nestjs/config';
 import { StringValue } from 'ms';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { User } from '../users/entities/user.entity';
 
 @Module({
   imports: [
-     ConfigModule.forRoot({
-          isGlobal: true,
-        }),
-    // لنتمكن من البحث في جدول المستخدمين
+    forwardRef(() => UsersModule),
+
+    TypeOrmModule.forFeature([User]),
 
     JwtModule.registerAsync({
+      global: true,
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        global: true,
         secret: configService.get<string>('JWT_SECRET'),
         signOptions: {
           expiresIn:
             configService.get<StringValue>('JWT_EXPIRES_IN') ?? '12h',
         },
       }),
-    }), UsersModule,
+    }),
   ],
+
   controllers: [AuthController],
-  providers: [AuthService],
-  exports: [JwtModule], // لتصدير مكتبة إصدار التذاكر لباقي الأقسام
+
+  providers: [
+    AuthService,
+    JwtAuthGuard,
+  ],
+
+  exports: [
+    AuthService,
+    JwtAuthGuard,
+  ],
 })
 export class AuthModule {}

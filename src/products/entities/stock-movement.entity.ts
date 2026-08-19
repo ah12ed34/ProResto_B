@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne } from 'typeorm';
 import { Product } from './product.entity';
 import { User } from '../../users/entities/user.entity';
+import { Branch } from 'src/branches/entities/branch.entity';
 
 export enum MovementType {
   IN = 'in',   // دخول (مشتريات، إضافة يدوية)
@@ -32,4 +33,8 @@ export class StockMovement {
 
   @CreateDateColumn()
   createdAt: Date; // تاريخ ووقت الحركة بالثانية
+
+  
+  @ManyToOne(() => Branch)
+  branch: Branch; // ربط الحركة بفرع معين (اختياري)
 }

@@ -8,6 +8,7 @@ import { InvoicesModule } from './invoices/invoices.module';
 import { UsersModule } from './users/users.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
+import { BranchesModule } from './branches/branches.module';
 @Module({
   imports: [
    ConfigModule.forRoot({
@@ -25,10 +26,10 @@ import { AuthModule } from './auth/auth.module';
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: true,
+        synchronize: configService.get<string>('NODE_ENV') !== 'production',
       }),
       inject: [ConfigService], // حقن الخدمة لتقرأ المتغيرات
-    }),ProductsModule, UnitsModule , InvoicesModule, UsersModule, AuthModule],
+    }),BranchesModule, ProductsModule, UnitsModule , InvoicesModule, UsersModule, AuthModule],
   controllers: [AppController],
   providers: [AppService],
 })

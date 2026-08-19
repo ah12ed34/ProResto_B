@@ -7,6 +7,8 @@ import { Product , ItemType } from '../products/entities/product.entity';
 import { ProductUnit } from '../products/entities/product-unit.entity'; // 1. استدعاء الجدول الوسيط
 import { User } from '../users/entities/user.entity'; // 2. استدعاء جدول المستخدمين
 import { UnitConverterService } from './unit.converter.service';
+import { BranchProductStock } from '../products/entities/branch-product-stock.entity';
+import { Branch } from '../branches/entities/branch.entity';
 @Injectable()
 export class InvoicesService {
   constructor(
@@ -15,7 +17,8 @@ export class InvoicesService {
     @InjectRepository(Product) private productRepo: Repository<Product>,
     // 2. حقن الجدول الوسيط للبحث عن معامل التحويل
     @InjectRepository(ProductUnit) private productUnitRepo: Repository<ProductUnit>, 
-  
+    @InjectRepository(BranchProductStock)
+    private branchStockRepo: Repository<BranchProductStock>,
     private dataSource: DataSource,
     private unitConverter: UnitConverterService,
   ) {}
@@ -31,7 +34,10 @@ export class InvoicesService {
 
     try {
       let totalAmount = 0;
-
+      const branchId = await this.getAccessibleBranchId(
+        user,
+        data.branchId,
+      );
       // 1. إنشاء فاتورة مشتريات
       const invoice = this.invoiceRepo.create({
         type: InvoiceType.PURCHASE, // تحديد نوعها كمشتريات
@@ -55,27 +61,45 @@ export class InvoicesService {
         if (product.type === ItemType.MENU) {
           throw new BadRequestException(`خطأ: لا يمكنك تخزين أصناف جاهزة (${product.name}) في المخزن! المشتريات للمواد الخام فقط.`);
         }
+        let branchStock = await queryRunner.manager.findOne(BranchProductStock, {
+          where: {
+            product: { id: item.productId },
+            branch: { id: branchId },
+          },
+        });
+
+        if (!branchStock) {
+          const newBranchStock = this.branchStockRepo.create({
+            product: product,
+            branch: { id: branchId },
+            qty: 0, // البداية من صفر
+          });
+
+          await queryRunner.manager.save(newBranchStock);
+          branchStock = newBranchStock;
+        }
 
         // 🌟 التعديل السحري: إجبار السيرفر على قراءة القيم كأرقام صريحة
-        const currentQty = Number(product.qty) || 0;
+        const currentQty = Number(branchStock.qty) || 0;
         const incomingQty = Number(item.quantity) || 0;
 
        const baseQty = await this.unitConverter.toBaseUnit(
   item.productId,
   item.unitId,
+  item.productUnitId, // استخدام الـ ProductUnitId لتحديد الوحدة الصحيحة
   item.quantity,
   queryRunner.manager
 );
 
-product.qty = currentQty + baseQty;
-        await queryRunner.manager.save(product);
+branchStock.qty = currentQty + baseQty;
+        await queryRunner.manager.save(branchStock);
 
         // --- توثيق حركة (دخول) للمخزن ---
         const movementData = {
           product: product,
           type: 'in', // دخول
           quantity: incomingQty,
-          balanceAfter: product.qty, // الرصيد الجديد الذي حسبناه
+          balanceAfter: branchStock.qty, // الرصيد الجديد الذي حسبناه
           description: `فاتورة مشتريات رقم #${savedInvoice.id} - المورد: ${savedInvoice.partyName}`,
           user: user,
         };
@@ -143,10 +167,26 @@ product.qty = currentQty + baseQty;
           where: { id: item.productId },
         });
 
+        
         if (!product) {
           throw new NotFoundException(`الصنف رقم ${item.productId} غير موجود`);
         }
-        
+        const branchId = await this.getAccessibleBranchId(
+              user,
+              data.branchId,
+            );
+        const branchStock = await queryRunner.manager.findOne(BranchProductStock, {
+          where: {
+            product: { id: item.productId },
+            branch: { id: branchId },
+          },
+        });
+
+        if (!branchStock) {
+          throw new NotFoundException(
+            `لا يوجد مخزون للصنف ${product?.name || item.productId} في هذا الفرع`,
+          );
+        }
         // 🌟 التحويل الآمن لأرقام (لحل مشكلة الجافاسكربت)
         // const currentQty = Number(product.qty) || 0;
         const soldQty = Number(item.quantity) || 0;
@@ -179,9 +219,10 @@ product.qty = currentQty + baseQty;
           product: product,
           type: 'out', // حركة خروج
           quantity: soldQty,
-          balanceAfter: product.qty, // الرصيد المتبقي بعد البيع
+          balanceAfter: branchStock.qty, // الرصيد المتبقي بعد البيع
           description: `فاتورة مبيعات رقم #${savedInvoice.id} - الكاشير: ${user.name}`,
           user: user,
+          branch: { id: branchId },
         };
         await queryRunner.manager.save('StockMovement', movementData);
       }
@@ -231,11 +272,27 @@ product.qty = currentQty + baseQty;
         if (!product || product.type !== 'raw') {
           throw new BadRequestException(`الصنف ${item.productId} إما غير موجود أو ليس مادة خاماً!`);
         }
+        const branchId = await this.getAccessibleBranchId(
+              user,
+              data.branchId,
+            );
+        const branchStock = await queryRunner.manager.findOne(BranchProductStock, {
+          where: {
+            product: { id: item.productId },
+            branch: { id: branchId },
+          },
+        });
+        if (!branchStock) {
+          throw new NotFoundException(
+            `لا يوجد مخزون للصنف ${product.name} في هذا الفرع`,
+          );
+        }
 
-        const currentQty = Number(product.qty) || 0;
+        const currentQty = Number(branchStock.qty) || 0;
         const issuedQty = await this.unitConverter.toBaseUnit(
   item.productId,
   item.unitId,
+  item.productUnitId,
   item.quantity,
   queryRunner.manager
 );
@@ -244,17 +301,20 @@ if (currentQty < issuedQty) {
   throw new BadRequestException('رصيد غير كافي');
 }
 
-product.qty = currentQty - issuedQty;
-        await queryRunner.manager.save(product);
+branchStock.qty = currentQty - issuedQty;
+        await queryRunner.manager.save(branchStock);
+
+        
 
         // توثيق حركة الخروج في الصندوق الأسود (Ledger)
         const movementData = {
           product: product,
           type: 'out',
           quantity: issuedQty,
-          balanceAfter: product.qty,
+          balanceAfter: branchStock.qty,
           description: `سند صرف للمطبخ رقم #${savedInvoice.id}`,
           user: user,
+          branch: { id: branchId },
         };
         await queryRunner.manager.save('StockMovement', movementData);
       }
@@ -268,7 +328,7 @@ product.qty = currentQty - issuedQty;
       await queryRunner.release();
     }
   }
-  async getDailyReport(body: any) {
+  async getDailyReport(userId: number) {
     // تحديد بداية ونهاية اليوم الحالي
     const today = new Date();
     const startOfDay = new Date(today.setHours(0, 0, 0, 0));
@@ -276,7 +336,7 @@ product.qty = currentQty - issuedQty;
 
     // جلب مبيعات اليوم
     const sales = await this.invoiceRepo.find({
-      where: { type: InvoiceType.SALE, createdAt: Between(startOfDay, endOfDay) , createdBy : { id : body?.userId } },
+      where: { type: InvoiceType.SALE, createdAt: Between(startOfDay, endOfDay) , createdBy : { id : userId } },
       relations: ['createdBy'],
     });
     for (const sale of sales) {
@@ -287,7 +347,7 @@ product.qty = currentQty - issuedQty;
 
     // جلب مشتريات اليوم
     const purchases = await this.invoiceRepo.find({
-      where: { type: InvoiceType.PURCHASE, createdAt: Between(startOfDay, endOfDay) , createdBy : { id : body?.userId } },
+      where: { type: InvoiceType.PURCHASE, createdAt: Between(startOfDay, endOfDay) , createdBy : { id : userId } },
       relations: ['createdBy'],
     });
     for (const purchase of purchases) {
@@ -310,5 +370,17 @@ product.qty = currentQty - issuedQty;
       salesDetails: sales, // تفاصيل الفواتير لعرضها للمدير
     };
   }
+private getAccessibleBranchId(
+  user: User,
+  requestedBranchId?: number,
+): number {
 
+  // المدير يستطيع اختيار أي فرع
+  if (user.role.name === 'admin') {
+    return requestedBranchId ?? user.branch.id;
+  }
+
+  // المستخدم العادي لا يستطيع تغيير فرعه
+  return user.branch.id;
+}
 }

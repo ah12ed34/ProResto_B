@@ -1,6 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany, ManyToOne, DeleteDateColumn } from 'typeorm';
 import { InvoiceItem } from './invoice-item.entity';
 import { User } from '../../users/entities/user.entity'; // 1. استدعاء جدول المستخدمين
+import { Branch } from 'src/branches/entities/branch.entity';
 
 // تحديد أنواع الفواتير
 export enum InvoiceType {
@@ -37,4 +38,13 @@ export class Invoice {
 
   @OneToMany(() => InvoiceItem, (item) => item.invoice, { cascade: true })
   items: InvoiceItem[];
+
+  @ManyToOne(() => User, { nullable: true })
+  updatedBy?: User;
+
+  @CreateDateColumn()
+  updatedAt?: Date;
+
+  @ManyToOne(() => Branch)
+  branch: Branch; // ربط الفاتورة بفرع معين (اختياري)
 }

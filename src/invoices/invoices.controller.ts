@@ -1,9 +1,10 @@
-import { Controller, Post ,Get,UseGuards, Body ,Req} from '@nestjs/common';
+import { Controller, Post ,Get,UseGuards, Body ,Req ,Query} from '@nestjs/common';
 import { InvoicesService } from './invoices.service';
 import { PermissionsGuard } from '../auth/permissions.guard'; // استدعاء الحارس
 import { RequirePermissions } from '../auth/permissions.decorator'; // استدعاء الختم
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 @Controller('invoices')
-@UseGuards(PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
 
@@ -27,9 +28,18 @@ export class InvoicesController {
     return this.invoicesService.createIssueInvoice(body, request.user);
   }
 
-  @Get('daily-report')
-  @RequirePermissions('view_reports') // يمكنك تفعيلها لاحقاً للمدير فقط
-  getDailyReport(@Body() body: any) {
-    return this.invoicesService.getDailyReport(body);
+ @Get('daily-report')
+@RequirePermissions('view_reports')
+getDailyReport(@Req() request: any, @Query('userId') userId?: string) {
+
+  const currentUser = request.user;
+
+  // لو المستخدم مدير → يقدر يحدد userId
+  if (userId && currentUser.role.permissions.includes('view_all_reports')) {
+    return this.invoicesService.getDailyReport(+userId);
   }
+
+  // غير ذلك → يرجع تقرير نفسه فقط
+  return this.invoicesService.getDailyReport(currentUser.id);
+}
 }

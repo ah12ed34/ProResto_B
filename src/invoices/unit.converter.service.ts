@@ -9,17 +9,30 @@ export class UnitConverterService {
   async toBaseUnit(
     productId: number,
     unitId: number,
+    productUnitId: number,
     quantity: number,
     manager?: any,
   ): Promise<number> {
     const repo = manager
       ? manager.getRepository(ProductUnit)
       : this.dataSource.getRepository(ProductUnit);
-
+    if(productUnitId === null || productUnitId === undefined || productUnitId === 0) {
+        const product = await manager.findOne(Product, {
+            where: {
+                id: productId ,
+                baseUnit: unitId
+            }
+        })
+        if(product) {
+            return Number(quantity)
+        }
+      throw new BadRequestException(
+        `❌ هذه الوحدة غير مرتبطة بالمنتج (productId=${productId}, unitId=${unitId})`,
+      );
+    }
     const productUnit = await repo.findOne({
       where: {
-        product: { id: productId },
-        unit: { id: unitId },
+        id: productUnitId,
       },
       relations: ['unit', 'product'],
     });
